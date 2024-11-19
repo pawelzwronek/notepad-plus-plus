@@ -443,7 +443,8 @@ void TabBarPlus::doOwnerDrawTab(TabBarPlus* tbpObj)
 				int paddingSize = 0;
 				if (_drawTabCloseButton && _drawTabPinButton) // 2 buttons
 				{
-					paddingSize = 16;
+					// paddingSize = 16;
+					paddingSize = 10;
 				}
 				else if (!_drawTabCloseButton && !_drawTabPinButton) // no button
 				{
@@ -1320,6 +1321,15 @@ LRESULT TabBarPlus::runProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPara
 	return ::CallWindowProc(_tabBarDefaultProc, hwnd, Message, wParam, lParam);
 }
 
+COLORREF blendColor(COLORREF color1, COLORREF color2, int alpha)
+{
+	int r = GetRValue(color1) * (255 - alpha) / 255 + GetRValue(color2) * alpha / 255;
+	int g = GetGValue(color1) * (255 - alpha) / 255 + GetGValue(color2) * alpha / 255;
+	int b = GetBValue(color1) * (255 - alpha) / 255 + GetBValue(color2) * alpha / 255;
+	return RGB(r, g, b);
+}
+
+
 void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 {
 	RECT rect = pDrawItemStruct->rcItem;
@@ -1343,6 +1353,7 @@ void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 	COLORREF colorInactiveBg = liteGrey;
 	COLORREF colorActiveText = ::GetSysColor(COLOR_BTNTEXT);
 	COLORREF colorInactiveText = grey;
+	COLORREF colorBg;
 
 	if (!NppDarkMode::useTabTheme() && isDarkMode)
 	{
@@ -1427,6 +1438,7 @@ void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 	if (isSelected)
 	{
 		hBrush = ::CreateSolidBrush(colorActiveBg);
+		colorBg = colorActiveBg;
 		::FillRect(hDC, &pDrawItemStruct->rcItem, hBrush);
 		::DeleteObject(static_cast<HGDIOBJ>(hBrush));
 
@@ -1483,6 +1495,7 @@ void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 		}
 		
 		hBrush = ::CreateSolidBrush(brushColour);
+		colorBg = brushColour;
 		::FillRect(hDC, &inactiveRect, hBrush);
 		::DeleteObject(static_cast<HGDIOBJ>(hBrush));
 	}
@@ -1520,81 +1533,8 @@ void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 		::ImageList_Draw(_hCloseBtnImgLst, idxCloseImg, hDC, buttonRect.left, buttonRect.top, ILD_TRANSPARENT);
 	}
 
-	// draw pin button
-	if (_drawTabPinButton && _hPinBtnImgLst != nullptr)
-	{
-		// Each tab combined with the following stats :
-		// (active / inactive) | (pinned / unpinned) | (hover / not hover / pushed)
-		
-
-		bool isPinned = reinterpret_cast<Buffer*>(tci.lParam)->isPinned();
-		int idxPinImg = _unpinnedIdx; // current: upinned as default
-
-
-		if (isPinned)
-		{
-			if (!isSelected) // inactive
-			{
-				if (_isPinHover && (_currentHoverTabItem == nTab))
-				{
-					if (_whichPinClickDown == -1) // hover
-					{
-						idxPinImg = _pinnedHoverIdx;
-					}
-					else if (_whichPinClickDown == _currentHoverTabItem) // pushed
-					{
-						idxPinImg = _unpinnedIdx;
-					}
-
-				}
-				else // pinned inactive
-				{
-					idxPinImg = _pinnedIdx;
-				}
-			}
-			else // current
-			{
-				if (_isPinHover && (_currentHoverTabItem == nTab)) // hover
-					idxPinImg = _pinnedHoverIdx;
-				else
-					idxPinImg = _pinnedIdx;
-			}
-
-		}
-		else // unpinned
-		{
-			if (!isSelected) // inactive
-			{
-				if (_isPinHover && (_currentHoverTabItem == nTab))
-				{
-					if (_whichPinClickDown == -1) // hover
-					{
-						idxPinImg = _unpinnedHoverInIdx;
-					}
-					else if (_whichPinClickDown == _currentHoverTabItem) // pushed
-					{
-						idxPinImg = _pinnedIdx;
-					}
-
-				}
-				else // unpinned inactive
-				{
-					idxPinImg = (_currentHoverTabItem == nTab) ? _unpinnedHoverOnTabIdx : _unpinnedInactIdx;
-				}
-			}
-			else // current
-			{
-				if (_isPinHover && (_currentHoverTabItem == nTab)) // hover
-					idxPinImg = _unpinnedHoverInIdx;
-				else
-					idxPinImg = _unpinnedIdx;
-			}
-		}
-
-		RECT buttonRect = _pinButtonZone.getButtonRectFrom(rect, _isVertical);
-
-		::ImageList_Draw(_hPinBtnImgLst, idxPinImg, hDC, buttonRect.left, buttonRect.top, ILD_TRANSPARENT);
-	}
+	// save the original rect for the text
+	RECT pinButtonRect = rect;
 
 	// draw image
 	HIMAGELIST hImgLst = (HIMAGELIST)::SendMessage(_hSelf, TCM_GETIMAGELIST, 0, 0);
@@ -1707,8 +1647,119 @@ void TabBarPlus::drawItem(DRAWITEMSTRUCT* pDrawItemStruct, bool isDarkMode)
 	::SetTextColor(hDC, textColor);
 
 	::DrawText(hDC, decodedLabel, lstrlen(decodedLabel), &rect, flags);
+
+	// draw pin button
+	if (_drawTabPinButton && _hPinBtnImgLst != nullptr)
+	{
+		// Each tab combined with the following stats :
+		// (active / inactive) | (pinned / unpinned) | (hover / not hover / pushed)
+		
+
+		bool isPinned = reinterpret_cast<Buffer*>(tci.lParam)->isPinned();
+		int idxPinImg = _unpinnedIdx; // current: upinned as default
+
+		if (isPinned)
+		{
+			if (!isSelected) // inactive
+			{
+				if (_isPinHover && (_currentHoverTabItem == nTab))
+				{
+					if (_whichPinClickDown == -1) // hover
+					{
+						idxPinImg = _pinnedHoverIdx;
+					}
+					else if (_whichPinClickDown == _currentHoverTabItem) // pushed
+					{
+						idxPinImg = _unpinnedIdx;
+					}
+
+				}
+				else // pinned inactive
+				{
+					idxPinImg = _pinnedIdx;
+				}
+			}
+			else // current
+			{
+				if (_isPinHover && (_currentHoverTabItem == nTab)) // hover
+					idxPinImg = _pinnedHoverIdx;
+				else
+					idxPinImg = _pinnedIdx;
+			}
+
+		}
+		else // unpinned
+		{
+			if (!isSelected) // inactive
+			{
+				if (_isPinHover && (_currentHoverTabItem == nTab))
+				{
+					if (_whichPinClickDown == -1) // hover
+					{
+						idxPinImg = _unpinnedHoverInIdx;
+					}
+					else if (_whichPinClickDown == _currentHoverTabItem) // pushed
+					{
+						idxPinImg = _pinnedIdx;
+					}
+
+				}
+				else // unpinned inactive
+				{
+					idxPinImg = (_currentHoverTabItem == nTab) ? _unpinnedHoverOnTabIdx : _unpinnedInactIdx;
+				}
+			}
+			else // current
+			{
+				if (_isPinHover && (_currentHoverTabItem == nTab)) // hover
+					idxPinImg = _unpinnedHoverInIdx;
+				else
+					idxPinImg = _unpinnedIdx;
+			}
+		}
+
+		auto suffix = L"      ";
+		bool endWith___ =  std::wstring(label).ends_with(suffix);
+		if (isPinned != endWith___)
+		{
+			auto len = wcslen(label);
+			if (!endWith___) {
+				swprintf(label + len, 2 * MAX_PATH - len, suffix);
+			} else {
+				label[len - wcslen(suffix)] = L'\0';
+			}
+			::SendMessage(_hSelf, TCM_SETITEM, nTab, reinterpret_cast<LPARAM>(&tci));
+		}
+
+		bool drawPin = isPinned || (_currentHoverTabItem == nTab);
+		if (drawPin)
+		{
+			/// Draw rectangle viertical transparent gradient overlay to make the pin button more visible
+			RECT buttonRect = _pinButtonZone.getButtonRectFrom(rect, _isVertical);
+			RECT overlayRect = buttonRect;
+			const int steps = 8;
+			const int padding = 0;
+			overlayRect.left -= steps + padding;
+			auto width = overlayRect.right - overlayRect.left;
+			auto height = overlayRect.bottom - overlayRect.top;
+			for (int x = 0; x < width; x++)
+			{
+				for (int y = 0; y < height; y++)
+				{
+					COLORREF color = colorBg;
+					if (x < steps) { /// Apply transparten gradient
+						COLORREF oldColor = GetPixel(hDC, overlayRect.left + x, overlayRect.top + y);
+						color = blendColor(color, oldColor, 255 - x * (255 / steps));
+					}
+					::SetPixel(hDC, overlayRect.left + x, overlayRect.top + y, color);
+				}
+			}
+			::ImageList_Draw(_hPinBtnImgLst, idxPinImg, hDC, buttonRect.left, buttonRect.top, ILD_TRANSPARENT);
+		}
+	}
 	::RestoreDC(hDC, nSavedDC);
 }
+
 
 
 void TabBarPlus::draggingCursor(POINT screenPoint)
